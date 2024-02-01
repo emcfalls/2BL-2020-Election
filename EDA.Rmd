@@ -1,0 +1,429 @@
+---
+title: "EDA-County Level"
+author: "Elyse McFalls"
+date: "2023-10-16"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+library(tidyverse)
+```
+
+Questions/comments
+1. Can you tell if the disaggregated numbers follow the Benford distribution from the aggregated statistic?
+2. County-level data looks fine 
+3. Are we only interested in Trump and Biden Votes?
+4. South Carolina is weird (what is in person absentee??)
+5. California labels the data as either absentee or not absentee 
+6. You can't vote online in federal elections [link](https://www.usa.gov/can-i-vote-online)
+7. Louisiana data seems copied? The first half has the precincts while the second has "COUNTY FLOATING" as the precinct but the same county names. Also, all of the PROVISIONAL modes come from Louisiana's COUNTY FLOATING precincts 
+
+Resolving voting mode differences
+- There were 18 different voting modes
+- Absentee voting:
+  - 2nd absentee (Maryland, cannot find the definition for 2nd)*
+  - Absentee (Maryland, New York, Iowa, Connecticut)
+  - Absentee by mail (North Carolina)
+  - Mail (1 Missouri, Utah)
+  - Mail ballots (Rhode Island)
+- Early voting:
+  - Advanced voting (Georgia -> [link](https://georgia.gov/vote-early-person))
+  - Early
+  - Early voting
+  - One stop (North Carolina -> [link](https://www.ncsbe.gov/voting/vote-early-person))
+  - UOCAVA (Missouri & New York -> Military and overseas voting [link](https://www.elections.ny.gov/VotingMilitaryFed.html), [link](https://www.sos.mo.gov/elections/govotemissouri/registeroverseas))*
+- Other:
+  - Fail safe (South Carolina, voting where someone can update their address on election day [link](https://scvotes.gov/voters/how-to-vote/))
+  - Fail safe provisional (also South Carolina, can't find anything specific about fail safe provisional voting)
+  - In person absentee voting (also South Carolina, idk idk)
+  - Not absentee (California, any voting that's not absentee)
+  - pres (Kentuck, idk idk)
+  - Provisional (Lousiana where the precinct name is COUNTY FLOATING, allows unregistered voters to vote (although their vote may be rejected) [link](https://www.sos.la.gov/ElectionsAndVoting/Vote/VoteProvisionally/Pages/default.aspx))
+  - Total (for precincts that don't disaggregate by voting type)
+  
+
+* might not want to include since the context is not the same (also only 22 rows)
+
+
+## MEDSL Data
+
+```{r}
+medsl_county <-read.delim('dataverse_files/countypres_2000-2020.tab', sep="\t", header=F)
+colnames(medsl_county) <- c('year', 'state', 'state_po', 'county_name', 'county_fips', 'office', 'candidate', 'party', 'candidate_votes', 'total_votes', 'version', 'mode')
+head(medsl_county)
+```
+
+```{r}
+medsl_precinct <- read.csv('dataverse_files/PRESIDENT_precinct_general.csv')
+```
+
+```{r}
+# more detailed 
+head(medsl_precinct)
+```
+
+## Data Cleaning (County Data)
+
+### County Level Data
+
+```{r}
+df <- medsl_df[medsl_df['year'] == 2020,]
+head(df)
+```
+
+```{r}
+# pivoting columns to have a variable for each candidate
+df <- df %>%
+  pivot_wider(names_from = candidate, values_from = candidate_votes) 
+```
+
+```{r}
+# updating column names for manipulation
+colnames(df) <- c("year",  "state", "state_po", "county_name", "county_fips", 
+                  "office", "party", "total_votes", "version", "mode",
+                  "biden", "other", "trump", "jorgensen")
+```
+
+```{r}
+# condensing data by removing nas
+df_county <- df %>%
+  group_by(state, county_name) %>%
+  summarise(biden = sum(biden, na.rm = T), 
+            trump = sum(trump, na.rm = T), 
+            jorgensen = sum(jorgensen, na.rm = T),
+            other = sum(other, na.rm = T))
+
+head(df_county)
+```
+
+```{r}
+# compare to MEDSL data
+head(medsl_df[medsl_df['year'] == 2020,])
+```
+
+### State Level Data
+
+The data from MEDSL matches the data from the federal elections website
+
+```{r}
+df_state <- df_county %>%
+  group_by(state) %>%
+  summarise(biden = sum(biden), trump = sum(trump), jorgensen = sum(jorgensen),
+            other = sum(other))
+
+head(df_state)
+```
+
+### 1st and 2nd Benford Law
+
+
+```{r}
+# county level
+df_county <- df_county %>%
+  mutate(fbl_biden = unlist(lapply(strsplit(as.character(biden), ""), function(x){x[1]})),
+         sbl_biden = unlist(lapply(strsplit(as.character(biden), ""), function(x){x[2]})),
+         fbl_trump = unlist(lapply(strsplit(as.character(trump), ""), function(x){x[1]})), 
+         sbl_trump = unlist(lapply(strsplit(as.character(trump), ""), function(x){x[2]})), 
+         fbl_jorgensen = unlist(lapply(strsplit(as.character(jorgensen), ""), function(x){x[1]})), 
+         sbl_jorgensen = unlist(lapply(strsplit(as.character(jorgensen), ""), function(x){x[2]})), 
+         fbl_other = unlist(lapply(strsplit(as.character(other), ""), function(x){x[1]})),
+         sbl_other = unlist(lapply(strsplit(as.character(other), ""), function(x){x[2]})))
+        
+```
+
+
+```{r}
+# county level
+df_state <- df_state %>%
+  mutate(fbl_biden = unlist(lapply(strsplit(as.character(biden), ""), function(x){x[1]})),
+         sbl_biden = unlist(lapply(strsplit(as.character(biden), ""), function(x){x[2]})),
+         fbl_trump = unlist(lapply(strsplit(as.character(trump), ""), function(x){x[1]})), 
+         sbl_trump = unlist(lapply(strsplit(as.character(trump), ""), function(x){x[2]})), 
+         fbl_jorgensen = unlist(lapply(strsplit(as.character(jorgensen), ""), function(x){x[1]})), 
+         sbl_jorgensen = unlist(lapply(strsplit(as.character(jorgensen), ""), function(x){x[2]})), 
+         fbl_other = unlist(lapply(strsplit(as.character(other), ""), function(x){x[1]})),
+         sbl_other = unlist(lapply(strsplit(as.character(other), ""), function(x){x[2]})))
+        
+```
+
+
+## EDA (County Data)
+
+### Distributions 
+
+```{r}
+# by county
+ggplot(df_county, aes(x = fbl_biden)) +  
+  geom_bar(aes(y = (..count..)/sum(..count..))) +
+  scale_y_continuous(labels=scales::percent)
+```
+
+```{r}
+# by county
+ggplot(df_county, aes(x = sbl_biden)) +  
+  geom_bar(aes(y = (..count..)/sum(..count..))) +
+  scale_y_continuous(labels=scales::percent)
+```
+
+```{r}
+# by county
+ggplot(df_county, aes(x = fbl_trump)) +  
+  geom_bar(aes(y = (..count..)/sum(..count..))) +
+  scale_y_continuous(labels=scales::percent)
+```
+
+```{r}
+# by county
+ggplot(df_county, aes(x = sbl_trump)) +  
+  geom_bar(aes(y = (..count..)/sum(..count..))) +
+  scale_y_continuous(labels=scales::percent)
+```
+
+
+
+## Data Cleaning (Precinct Data)
+
+```{r}
+# only select voting data for trump or biden
+df_main <- medsl_precinct[medsl_precinct$party_simplified %in% c("DEMOCRAT", "REPUBLICAN"),]
+```
+
+```{r}
+# all in the general election
+df_main %>%
+  distinct(stage)
+```
+
+```{r}
+# no special elections 
+df_main %>%
+  filter(special == T)
+```
+
+```{r}
+# an issue for getting the data in these states (12/51 - including D.C.)
+df_main %>%
+  filter(readme_check == T) %>%
+  distinct(state)
+```
+
+*Shrinking data for precinct level*
+```{r}
+df_precinct <- df_main %>%
+  select(state, county_name, jurisdiction_name, party_simplified, mode, votes)
+```
+
+
+*Making a county level df*
+```{r}
+df_county <- df_precinct %>%
+  group_by(state, county_name, party_simplified) %>%
+  summarise(votes = sum(votes, na.rm = T)) 
+```
+
+*Making a state level df*
+```{r}
+df_state <- df_county %>%
+  group_by(state, party_simplified) %>%
+  summarise(votes = sum(votes, na.rm = T)) 
+```
+
+### Adding 1BL and 2BL
+
+```{r}
+df_precinct <- df_precinct %>%
+  mutate(first_digit = unlist(lapply(as.character(votes), function(x){substr(x, 0, 1)})),
+         second_digit = unlist(lapply(as.character(votes), function(x){substr(x, 2, 2)})))
+```
+
+```{r}
+df_county <- df_county %>%
+  mutate(first_digit = unlist(lapply(as.character(votes), function(x){substr(x, 0, 1)})),
+         second_digit = unlist(lapply(as.character(votes), function(x){substr(x, 2, 2)})))
+```
+
+```{r}
+df_state <- df_state %>%
+  mutate(first_digit = unlist(lapply(as.character(votes), function(x){substr(x, 0, 1)})),
+         second_digit = unlist(lapply(as.character(votes), function(x){substr(x, 2, 2)})))
+```
+
+
+*saving data*
+
+```{r}
+write.csv(df_precinct, "data/precinct_data.csv")
+write.csv(df_county, "data/county_data.csv")
+write.csv(df_state, "data/state_data.csv")
+```
+
+
+
+## EDA: Digit Distribution
+
+
+*precinct data*
+```{r}
+# all precincts, first digit 
+df_precinct %>% 
+  filter(first_digit != 0 & first_digit != '-') %>%
+  group_by(first_digit, party_simplified) %>%
+  summarise(n = n()) %>%
+  ungroup() %>%
+  group_by(party_simplified) %>%
+  mutate(prop = n/sum(n)) %>%
+  ggplot(aes(x = first_digit, y = prop)) +
+  geom_bar(stat = "identity") +
+  geom_function(fun = function(x) log10(1 + (1/x)), color = "red") +
+  facet_wrap(~party_simplified) +
+  scale_y_continuous(labels = scales::percent_format(scale=100)) +
+  labs(title = "Distribution of the First Vote Count Digit for All Precincts",
+         subtitle = "By Democratic and Republican Party", y = "Percentage", x = "First Digit of Vote Counts")
+```
+
+*Georgia*
+```{r}
+# all precincts, first digit 
+df_precinct %>% 
+  filter(first_digit != 0 & first_digit != '-', state == "GEORGIA") %>%
+  group_by(first_digit, party_simplified) %>%
+  summarise(n = n()) %>%
+  ungroup() %>%
+  group_by(party_simplified) %>%
+  mutate(prop = n/sum(n)) %>%
+  ggplot(aes(x = first_digit, y = prop)) +
+  geom_bar(stat = "identity") +
+  geom_function(fun = function(x) log10(1 + (1/x)), color = "red") +
+  facet_wrap(~party_simplified) +
+  scale_y_continuous(labels = scales::percent_format(scale=100)) +
+  labs(title = "Distribution of the First Vote Count Digit for Georgia Precincts",
+         subtitle = "By Democratic and Republican Party", y = "Percentage", x = "First Digit of Vote Counts")
+```
+
+
+
+
+
+
+
+
+
+
+
+*Milwaukee, Wisconsin*
+
+
+
+
+
+*Second digit*
+```{r}
+# all precincts, second digit 
+df_precinct %>% 
+  filter(second_digit != '') %>%
+  group_by(second_digit, party_simplified) %>%
+  summarise(n = n()) %>%
+  ungroup() %>%
+  group_by(party_simplified) %>%
+  mutate(prop = n/sum(n)) %>%
+  ggplot(aes(x = second_digit, y = prop)) +
+    geom_bar(stat = "identity") +
+   geom_line(aes(y = c(0.120, 0.12, 0.114, 0.114, 0.109, 0.109, 0.104, 0.104, 0.1, 0.1, 0.097, 0.097, 0.093, 0.093, 0.09, 0.09, 0.088, 0.088, 0.085, 0.085), 
+                x = c(1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10)), color = "red") +
+    facet_wrap(~party_simplified) +
+    scale_y_continuous(labels = scales::percent_format(scale=100)) +
+    labs(title = "Distribution of the Second Vote Count Digit for All Precincts",
+         subtitle = "By Democratic and Republican Party", y = "Percentage", x = "Second Digit of Vote Counts") +
+    plot(x = c(3, 5), y = c(100, 200))
+```
+
+*county data*
+
+```{r}
+df_county %>% 
+  filter(first_digit != 0 & first_digit != '-') %>%
+  group_by(first_digit, party_simplified) %>%
+  summarise(n = n()) %>%
+  ungroup() %>%
+  group_by(party_simplified) %>%
+  mutate(prop = n/sum(n)) %>%
+  ggplot(aes(x = first_digit, y = prop)) +
+  geom_bar(stat = "identity") +
+  geom_function(fun = function(x) log10(1 + (1/x)), color = "red") +
+  facet_wrap(~party_simplified) +
+  scale_y_continuous(labels = scales::percent_format(scale=100)) +
+  labs(title = "Distribution of the First Vote Count Digit for All Counties",
+         subtitle = "By Democratic and Republican Party", y = "Percentage", x = "First Digit of Vote Counts")
+```
+
+```{r}
+# all counties, second digit 
+df_county %>% 
+  filter(second_digit != '') %>%
+  group_by(second_digit, party_simplified) %>%
+  summarise(n = n()) %>%
+  ungroup() %>%
+  group_by(party_simplified) %>%
+  mutate(prop = n/sum(n)) %>%
+  ggplot(aes(x = second_digit, y = prop)) +
+    geom_bar(stat = "identity") +
+   geom_line(aes(y = c(0.120, 0.12, 0.114, 0.114, 0.109, 0.109, 0.104, 0.104, 0.1, 0.1, 0.097, 0.097, 0.093, 0.093, 0.09, 0.09, 0.088, 0.088, 0.085, 0.085), 
+                x = c(1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10)), color = "red") +
+    facet_wrap(~party_simplified) +
+    scale_y_continuous(labels = scales::percent_format(scale=100)) +
+    labs(title = "Distribution of the Second Vote Count Digit for All Counties",
+         subtitle = "By Democratic and Republican Party", y = "Percentage", x = "Second Digit of Vote Counts") +
+    plot(x = c(3, 5), y = c(100, 200))
+```
+
+
+*state data*
+```{r}
+# first digit 
+df_state %>% 
+  filter(first_digit != 0 & first_digit != '-') %>%
+  group_by(first_digit, party_simplified) %>%
+  summarise(n = n()) %>%
+  ungroup() %>%
+  group_by(party_simplified) %>%
+  mutate(prop = n/sum(n)) %>%
+  ggplot(aes(x = first_digit, y = prop)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(labels = scales::percent_format(scale=100)) +
+  geom_function(fun = function(x) log10(1 + (1/x)), color = "red") +
+  facet_wrap(~party_simplified) +
+  labs(title = "Distribution of the First Vote Count Digit for All States",
+       subtitle = "By Democratic and Republican Party", y = "Percentage", x = "First Digit of Vote Counts")
+```
+
+```{r}
+# second digit 
+df_state %>% 
+  filter(second_digit != '') %>%
+  group_by(second_digit, party_simplified) %>%
+  summarise(n = n()) %>%
+  ungroup() %>%
+  group_by(party_simplified) %>%
+  mutate(prop = n/sum(n)) %>%
+  ggplot(aes(x = second_digit, y = prop)) +
+    geom_bar(stat = "identity") +
+   geom_line(aes(y = c(0.120, 0.12, 0.114, 0.114, 0.109, 0.109, 0.104, 0.104, 0.1, 0.1, 0.097, 0.097, 0.093, 0.093, 0.09, 0.09, 0.088, 0.088, 0.085, 0.085), 
+                x = c(1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10)), color = "red") +
+  facet_wrap(~party_simplified) +
+  scale_y_continuous(labels = scales::percent_format(scale=100)) +
+  labs(title = "Distribution of the Second Vote Count Digit for All States",
+       subtitle = "By Democratic and Republican Party", y = "Percentage", x = "Second Digit of Vote Counts")
+```
+
+
+
+
+
+
+
+
+
